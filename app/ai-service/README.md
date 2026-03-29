@@ -120,6 +120,38 @@ curl -X POST "http://localhost:8000/ai/ocr" -F "image=@document.jpg"
 }
 ```
 
+### PII Anonymization
+- **POST** `/ai/anonymize` - Privacy-preserving anonymization for names, locations, and dates before external LLM usage
+
+Request body:
+
+```json
+{
+  "text": "On 15 Jan 2025, Mary Johnson received aid in Maiduguri Camp."
+}
+```
+
+Response body:
+
+```json
+{
+  "success": true,
+  "anonymized_text": "On [EVENT_DATE], [RECIPIENT_NAME] received aid in [LOCATION].",
+  "original_length": 60,
+  "pii_summary": {
+    "names": 1,
+    "locations": 1,
+    "dates": 1,
+    "total": 3
+  },
+  "token_counts": {
+    "[EVENT_DATE]": 1,
+    "[RECIPIENT_NAME]": 1,
+    "[LOCATION]": 1
+  }
+}
+```
+
 ## Project Structure
 
 ```

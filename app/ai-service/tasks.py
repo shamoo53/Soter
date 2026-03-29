@@ -13,6 +13,7 @@ import httpx
 
 import metrics
 from config import settings
+from services.pii_scrubber import PIIScrubberService
 from services.humanitarian_verification import HumanitarianVerificationService
 
 # Configure logging
@@ -71,6 +72,7 @@ def get_process_heavy_inference_task():
 
 # Task status storage (in production, use Redis with proper TTL)
 task_results: Dict[str, Dict[str, Any]] = {}
+pii_scrubber_service = PIIScrubberService()
 humanitarian_verification_service = HumanitarianVerificationService()
 
 
@@ -243,6 +245,13 @@ def _process_model_inference(payload: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         dict: Inference results
     """
+    data = payload.get('data', {})
+    raw_text = data.get('text') if isinstance(data, dict) else None
+    anonymization_result = None
+    if isinstance(raw_text, str) and raw_text.strip():
+        # Enforce privacy-by-design: sanitize text before any external LLM call.
+        anonymization_result = pii_scrubber_service.anonymize(raw_text)
+
     # Simulate model inference
     time.sleep(3)  # Simulate inference time
     
@@ -255,7 +264,8 @@ def _process_model_inference(payload: Dict[str, Any]) -> Dict[str, Any]:
                 {'label': 'need_rejected', 'confidence': 0.03}
             ],
             'model_version': 'v1.0.0',
-            'processing_time_ms': 250
+            'processing_time_ms': 250,
+            'anonymization': anonymization_result,
         },
         'processing_time': 3.0
     }
@@ -350,7 +360,7 @@ def get_task_status(task_id: str) -> Dict[str, Any]:
     """
     # Try to get from Celery result backend first
     try:
-        celery_result = AsyncResult(task_id, app=celery_app)
+        celery_result = AsyncResult(task_id, app=get_celery_app())
         if celery_result.ready():
             return {
                 'task_id': task_id,

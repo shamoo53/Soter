@@ -4,7 +4,6 @@ Run this after installing dependencies to test the basic functionality
 """
 
 import sys
-import subprocess
 
 
 def _check_imports() -> bool:

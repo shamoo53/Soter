@@ -146,6 +146,29 @@ def test_proof_of_life_threshold_validation(client):
     assert response.status_code == 422
 
 
+def test_anonymize_endpoint_success(client):
+    """Test successful anonymization preserves context while masking PII."""
+    payload = {
+        "text": "On 15 Jan 2025, Mary Johnson received support in Borno State.",
+    }
+
+    response = client.post("/ai/anonymize", json=payload)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["success"] is True
+    assert "anonymized_text" in data
+    assert "received support" in data["anonymized_text"]
+    assert "[RECIPIENT_NAME]" in data["anonymized_text"]
+    assert data["pii_summary"]["total"] >= 3
+
+
+def test_anonymize_endpoint_validation(client):
+    """Test request validation for anonymization endpoint."""
+    response = client.post("/ai/anonymize", json={"text": ""})
+    assert response.status_code == 422
+
+
 def test_humanitarian_verification_success(client, monkeypatch):
     """Test successful humanitarian verification response contract."""
 
