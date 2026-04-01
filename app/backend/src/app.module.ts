@@ -75,6 +75,7 @@ import { AidEscrowModule } from './onchain/aid-escrow.module';
     NotificationsModule,
     JobsModule,
     AnalyticsModule,
+    AidEscrowModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60000,       // 60 seconds window
@@ -82,7 +83,7 @@ import { AidEscrowModule } from './onchain/aid-escrow.module';
       },
     ]),
   ],
-  AidEscrowModule,
+  
 
   controllers: [AppController],
   providers: [
