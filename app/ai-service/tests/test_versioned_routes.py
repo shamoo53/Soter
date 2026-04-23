@@ -4,28 +4,48 @@ Tests for versioned API routes – issue #248.
 Coverage
 --------
 * /v1/ai/* endpoints behave identically to their legacy /ai/* counterparts.
-* Legacy /ai/* paths that are covered by the redirect middleware return 308
-  and point to the correct /v1 location.
+* Legacy /ai/* paths that are in the redirect map return 308 pointing to
+  the correct /v1 location.
 * /ai/ocr and /ai/metrics are explicitly excluded from the redirect map and
   continue to work on their original paths.
 * The root endpoint advertises the api_v1 key.
 * Health endpoint version field reflects the new version string.
 
-All tests use follow_redirects=False so we can assert on redirect responses
-directly, and a second client with follow_redirects=True to verify that the
-complete request round-trip succeeds for monkeypatched scenarios.
+Design note on resource throttling
+-----------------------------------
+The monitor_requests middleware throttles requests when host RAM > 90 %.
+CI / developer machines often cross this threshold.  All tests therefore
+patch metrics.check_system_resources to return True (resources healthy)
+via a session-scoped autouse fixture, so test outcomes are never
+environment-dependent.  The throttle behaviour itself is tested in a
+dedicated class that temporarily restores the real implementation.
 """
 
 import io
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import main
+import metrics
 from main import app
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Session-level resource-check bypass
+# Every test gets healthy resources unless it opts out explicitly.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def mock_healthy_resources():
+    """Patch check_system_resources to always report healthy for all tests."""
+    with patch.object(metrics, "check_system_resources", return_value=True):
+        yield
+
+
+# ---------------------------------------------------------------------------
+# Clients
 # ---------------------------------------------------------------------------
 
 
@@ -110,7 +130,7 @@ class TestOCRLegacyPath:
             files={"image": ("img.png", b"x", "image/png")},
         )
         # Any non-3xx response proves we hit the handler, not a redirect.
-        assert response.status_code < 300 or response.status_code >= 400
+        assert response.status_code not in (301, 302, 307, 308)
 
 
 # ---------------------------------------------------------------------------
@@ -222,10 +242,7 @@ class TestProofOfLifeV1:
 
         response = following_client.post(
             "/v1/ai/proof-of-life",
-            json={
-                "selfie_image_base64": "dGVzdA==",
-                "confidence_threshold": 0.70,
-            },
+            json={"selfie_image_base64": "dGVzdA==", "confidence_threshold": 0.70},
         )
         assert response.status_code == 200
         data = response.json()
@@ -355,13 +372,8 @@ class TestLegacyV1Parity:
         legacy_resp = following_client.post("/ai/anonymize", json=payload)
 
         assert v1_resp.status_code == legacy_resp.status_code == 200
-
-        v1_data = v1_resp.json()
-        legacy_data = legacy_resp.json()
-
-        # Both must include the same top-level keys.
-        assert set(v1_data.keys()) == set(legacy_data.keys())
-        assert v1_data["success"] == legacy_data["success"] is True
+        assert set(v1_resp.json().keys()) == set(legacy_resp.json().keys())
+        assert v1_resp.json()["success"] == legacy_resp.json()["success"] is True
 
     def test_proof_of_life_parity(self, following_client, monkeypatch):
         fake_result = {
@@ -427,9 +439,42 @@ class TestLegacyV1Parity:
 class TestMetricsEndpoint:
     def test_metrics_not_redirected(self, client):
         response = client.get("/ai/metrics")
-        # Any non-308 proves it was not intercepted by the redirect middleware.
         assert response.status_code != 308
 
     def test_metrics_returns_content(self, client):
         response = client.get("/ai/metrics")
         assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Resource throttle – verify the 503 path still works for /v1/* endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestResourceThrottle:
+    """Verify throttle fires for real AI endpoints but not for infrastructure."""
+
+    def test_v1_endpoint_throttled_when_resources_exhausted(self, following_client):
+        with patch.object(metrics, "check_system_resources", return_value=False):
+            response = following_client.post(
+                "/v1/ai/anonymize",
+                json={"text": "Some text with Jane Smith in Lagos."},
+            )
+        assert response.status_code == 503
+
+    def test_health_never_throttled(self, client):
+        """Health endpoint must respond even under resource pressure."""
+        with patch.object(metrics, "check_system_resources", return_value=False):
+            response = client.get("/health")
+        assert response.status_code == 200
+
+    def test_root_never_throttled(self, client):
+        with patch.object(metrics, "check_system_resources", return_value=False):
+            response = client.get("/")
+        assert response.status_code == 200
+
+    def test_redirect_not_throttled(self, client):
+        """Legacy redirect paths must always return 308, never 503."""
+        with patch.object(metrics, "check_system_resources", return_value=False):
+            response = client.post("/ai/anonymize", json={})
+        assert response.status_code == 308
