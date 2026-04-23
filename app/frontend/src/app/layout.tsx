@@ -34,16 +34,16 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen bg-white text-blue-900 dark:bg-slate-950 dark:text-slate-50`}
       >
-        <ThemeProvider> {/* Wrap with ThemeProvider */}
-        <ErrorBoundary>
-          <QueryProvider>
-            <ToastProvider>
-              <Navbar />
-              {children}
-            </ToastProvider>
-          </QueryProvider>
+        <ThemeProvider>
+          <ErrorBoundary>
+            <QueryProvider>
+              <ToastProvider>
+                <Navbar />
+                {children}
+              </ToastProvider>
+            </QueryProvider>
+          </ErrorBoundary>
         </ThemeProvider>
-        </ErrorBoundary>
       </body>
     </html>
   );
