@@ -19,6 +19,11 @@ import {
 } from '@nestjs/swagger';
 import { ClaimsService } from './claims.service';
 import { CreateClaimDto } from './dto/create-claim.dto';
+import {
+  ClaimReceiptDto,
+  ClaimShareResponseDto,
+  SendReceiptShareDto,
+} from './dto/claim-receipt.dto';
 import { Roles } from 'src/auth/roles.decorator';
 import { AppRole } from 'src/auth/app-role.enum';
 import { InternalNotesService } from 'src/common/services/internal-notes.service';
@@ -187,6 +192,45 @@ export class ClaimsController {
   })
   archive(@Param('id') id: string) {
     return this.claimsService.archive(id);
+  }
+
+  @Get(':id/receipt')
+  @ApiOperation({
+    summary: 'Get claim receipt',
+    description: 'Generates a shareable receipt for the specified claim.',
+  })
+  @ApiOkResponse({
+    description: 'Claim receipt generated successfully.',
+    type: ClaimReceiptDto,
+  })
+  @ApiNotFoundResponse({
+    description: 'The specified claim was not found.',
+  })
+  getReceipt(@Param('id') id: string): Promise<ClaimReceiptDto> {
+    return this.claimsService.getReceipt(id);
+  }
+
+  @Post(':id/receipt/share')
+  @ApiOperation({
+    summary: 'Share claim receipt',
+    description:
+      'Generates and optionally sends the claim receipt via email or SMS.',
+  })
+  @ApiOkResponse({
+    description: 'Receipt generated and sharing initiated successfully.',
+    type: ClaimShareResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid share parameters.',
+  })
+  @ApiNotFoundResponse({
+    description: 'The specified claim was not found.',
+  })
+  shareReceipt(
+    @Param('id') id: string,
+    @Body() shareDto: SendReceiptShareDto,
+  ): Promise<ClaimShareResponseDto> {
+    return this.claimsService.shareReceipt(id, shareDto);
   }
 
   @Post(':id/notes')
