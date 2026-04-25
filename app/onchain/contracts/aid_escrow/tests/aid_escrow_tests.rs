@@ -6,7 +6,7 @@ use soroban_sdk::{
     token::{Client as TokenClient, StellarAssetClient},
 };
 
-use aid_escrow::{AidEscrow, AidEscrowClient, Config, Error, Package, PackageStatus};
+use aid_escrow::{AidEscrow, AidEscrowClient, Config, Error, PackageStatus};
 
 // ---------------------------------------------------------------------------
 // Test helpers
