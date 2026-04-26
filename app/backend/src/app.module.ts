@@ -17,10 +17,7 @@ import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { JobsModule } from './jobs/jobs.module';
 import { RequestCorrelationMiddleware } from './middleware/request-correlation.middleware';
-import {
-  SecurityModule,
-  createRateLimiter,
-} from './common/security/security.module';
+import { SecurityModule } from './common/security/security.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { APP_GUARD } from '@nestjs/core';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
@@ -31,14 +28,17 @@ import { LoggingInterceptor } from './interceptors/logging.interceptor';
 import { LoggerService } from './logger/logger.service';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { AnalyticsModule } from './analytics/analytics.module';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AidEscrowModule } from './onchain/aid-escrow.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { SessionModule } from './session/session.module';
 import { CommonServicesModule } from './common/services/common-services.module';
 import { EvidenceModule } from './evidence/evidence.module';
 import { RetentionPolicyModule } from './retention-policy/retention-policy.module';
-import { SandboxModule } from './sandbox/sandbox.module';
+import { InvitesModule } from './orgs/invites.module';
+import { AdminSearchModule } from './search/admin-search.module';
+import { RedisModule } from '@liaoliaots/nestjs-redis';
+import { AdaptiveRateLimitGuard } from './common/guards/adaptive-rate-limit.guard';
 
 @Module({
   imports: [
@@ -87,7 +87,18 @@ import { SandboxModule } from './sandbox/sandbox.module';
     CommonServicesModule,
     EvidenceModule,
     RetentionPolicyModule,
-    SandboxModule,
+    InvitesModule,
+    AdminSearchModule,
+    RedisModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        config: {
+          host: configService.get<string>('REDIS_HOST') ?? 'localhost',
+          port: parseInt(configService.get<string>('REDIS_PORT') ?? '6379', 10),
+        },
+      }),
+      inject: [ConfigService],
+    }),
     ThrottlerModule.forRoot([
       {
         ttl: 60000, // 60 seconds window
@@ -112,12 +123,12 @@ import { SandboxModule } from './sandbox/sandbox.module';
       useClass: RolesGuard, // runs second — checks request.user.role against @Roles()
     },
     {
-      provide: APP_INTERCEPTOR,
-      useClass: LoggingInterceptor,
+      provide: APP_GUARD,
+      useClass: AdaptiveRateLimitGuard, // Adaptive rate limiting using Redis
     },
     {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard, // rate-limiting guard runs after auth and role checks to avoid unnecessary counting of unauthenticated/unauthorized requests
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
     },
   ],
 })
@@ -130,9 +141,6 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     // Request correlation middleware
     consumer.apply(RequestCorrelationMiddleware).forRoutes('*');
-
-    // Rate limiter middleware
-    consumer.apply(createRateLimiter(this.configService)).forRoutes('*');
 
     // Startup log
     this.loggerService.log(
